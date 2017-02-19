@@ -1,2 +1,4 @@
 *.pyc
 scripts/
+config/sentences.json
+config/people.json
