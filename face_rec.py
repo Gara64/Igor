@@ -8,9 +8,10 @@ import logging
 import cv2
 import time
 import sys
+import json
+import random
 sys.path.append("lib")
 
-# facerec imports
 from facerec.model import PredictableModel
 from facerec.feature import Fisherfaces
 from facerec.distance import EuclideanDistance
@@ -22,13 +23,14 @@ from facedet.detector import CascadedDetector
 # helpers
 from helper.common import *
 from helper.video import *
-# text to speech
-from voice.text2speech import textToSpeechGoogle
+from voice.text2speech import textToSpeechPico
 
 
-MAX_DISTANCE = 850          # Minimal euclidean distance to recognize someone
+MAX_DISTANCE = 900          # Minimal euclidean distance to recognize someone
 DELAY_RECO_SAME_PERSON = 5  # Delay (seconds) between 2 same person recognition
 
+people = {}
+sentences = {}
 
 # Subclasses the PredictableModel to store some more information, so we don't
 # need to pass the dataset on each program call...
@@ -38,6 +40,7 @@ class ExtendedPredictableModel(PredictableModel):
         PredictableModel.__init__(self, feature=feature, classifier=classifier)
         self.image_size = image_size
         self.subject_names = subject_names
+
 
 # Get the PrediictableModel, used to learn a model
 def get_model(image_size, subject_names):
@@ -54,11 +57,21 @@ class App(object):
 
     # Dict to store faces detection timestamps
     lastFaceDetect = {}
+    # Dict to store the speeches
+    detectAfterOther = {}
+    detectAfterSelf = {}
+    detectAfterAny = []
+    # Dict to store the people names
+    peopleNames = {}
 
     def __init__(self, model, camera_id, cascade_filename):
         self.model = model
         self.detector = CascadedDetector(cascade_fn=cascade_filename, minNeighbors=5, scaleFactor=1.4)
         self.cam = create_capture(camera_id)
+
+        self.buildSentences()
+        self.buildPeople()
+
 
     # Get a face from the image
     def getFace(self, img, r):
@@ -70,16 +83,80 @@ class App(object):
 
         return face
 
+
+    # Build the sentences structures
+    def buildSentences(self):
+        for sentence in sentences:
+            if sentence["when"]["after"] == "other":
+                maxDelayOther = sentence["when"]["delay"]
+                speeches = sentence["speech"]
+                self.detectAfterOther[maxDelayOther] = speeches
+            elif sentence["when"]["after"] == "self":
+                maxDelaySelf = sentence["when"]["delay"]
+                speeches = sentence["speech"]
+                self.detectAfterSelf[maxDelaySelf] = speeches
+            elif sentence["when"]["after"] == "any":
+                speeches = sentence["speech"]
+                self.detectAfterAny.append(speeches)
+
+    # Build the people names structure
+    def buildPeople(self):
+        for p in people:
+            self.peopleNames[p["model_name"]] = (p["speech_name"], p["nicknames"], p["gender"])
+
+
     # Gender convertion for speech after recognition
-    def convertGender(faceName, text):
+    def convertGender(self, faceName, text):
         gender = 0 if faceName is "Pauline" else 1
 
         if text is "maitre":
             if gender is 0: text = "maitresse"
         elif text is "travailleur":
             if gender is 0: text = "travailleuse"
-
+        print "gender : " + str(gender)
         return text
+
+
+    # Util method to pick a random text speech in the array
+    def pickSpeech(self, speech):
+        return speech[random.randint(0, len(speech) - 1)]
+
+
+    # Util method to pick a speech or nickname name based on the model name
+    def pickName(self, faceName, useNickName):
+        people = self.peopleNames[faceName]
+        if useNickName:
+            nickNames = people[1]
+            return nickNames[random.randint(0, len(nickNames) - 1)]
+        else:
+            return people[0]
+
+
+    # Return text if someone else was recently detected
+    def getTextRecentOtherDetection(self, faceName, curTime):
+        # Iterate over all the previous detection
+        for delay, name in enumerate(self.lastFaceDetect):
+            if name != faceName:
+                lastOtherDelay = curTime - int(delay)
+                # Check the max delays
+                for maxDelay, speeches in enumerate(self.detectAfterOther):
+                    if lastOtherDelay < maxDelay:
+                        return self.pickSpeech(speeches) + self.pickName(faceName, False)
+
+
+    def getTextDelay(self, faceName, curTime):
+        return ""
+
+        # if SO in self.lastFaceDetect:
+        #     lastSODetection = curTime - self.lastFaceDetect[SO]
+        #     if lastSODetection < 10:
+        #     text = "Vous egalement, " + self.convertGender(faceName, 'maitre') + " " + faceName
+
+
+    def getTextDefault(self, faceName):
+        for speech in self.detectAfterAny:
+            return self.pickSpeech(speech) + self.pickName(faceName, True)
+
 
     # Action after recognition
     def actionAfterRecognition(self, faceName, curTime, delay):
@@ -88,41 +165,58 @@ class App(object):
         # say random sentence / surname, depending on the time, weather, ..
         # Idea : voice mail -> drop messages to say when SO is back a home
 
-        # NOTE : the speech orthograph is sometimes awful: this is because the
-        # the Google translate script does not support the accents very well
+
+        # Algo :
+        # * Detection d'une autre personne recemment
+        # * détection de la meme personne plusieurs fois de suite
+        # * detection après un long délai
+        # * détection en fct de l'heure / jour
+        # * détection par défaut
+
+
 
         delayHours = delay / 3600
         hourOfDay = time.localtime(curTime).tm_hour
         dayOfWeek =  time.localtime(curTime).tm_wday
 
-        # The SO was detected few seconds before
-        SO = "Paul" if faceName is "Pauline" else "Pauline"
-        if SO in self.lastFaceDetect:
-            lastSODetection = curTime - self.lastFaceDetect[SO]
-            if lastSODetection < 10:
-                text = "Vous egalement, " + self.convertGender('maitre') + " " + faceName
 
-        # It's been a long time since the last detect
-        elif delayHours > 40:
-            text = "Vous revoila + " + faceName + " ! Vous m'avez manquai"
 
-        # Why are you still there ?
-        elif delay > 0 and delay < 10:
-            text = "Pourquoi restez-vous là, " + self.convertGender('maitre') + " ?"
 
-        # Man, it's pretty late and we're during the week
-        elif hourOfDay > 21 and delayHours > 10 and dayOfWeek < 4:
-            text = "Bienvenue chez vous " + faceName + "o , brave " + self.convertGender('travailleur')
+        # SO = "Paul" if faceName is "Pauline" else "Pauline"
+        # if SO in self.lastFaceDetect:
+        #     lastSODetection = curTime - self.lastFaceDetect[SO]
+        #     if lastSODetection < 10:
+        #         text = "Vous egalement, " + self.convertGender(faceName, 'maitre') + " " + faceName
 
-        # Still late but hey, it's week-end!
-        elif dayOfWeek > 3:
-            text = "Bonsoir " + faceName + " et bonne nuit, je suppose"
 
-        # Back to basics
-        else:
-            text = "Bonjour " + faceName
 
-        textToSpeechGoogle(text)
+        # # It's been a long time since the last detect
+        # elif delayHours > 40:
+        #     text = "Vous revoila + " + faceName + " ! Vous m'avez manquai"
+        #
+        # # Why are you still there ?
+        # elif delay > 0 and delay < 10:
+        #     text = "Pourquoi restez-vous là, " + self.convertGender(faceName, 'maitre') + " ?"
+        #
+        # # Man, it's pretty late and we're during the week
+        # elif hourOfDay > 21 and delayHours > 10 and dayOfWeek < 4:
+        #     text = "Bienvenue chez vous " + faceName + "o , brave " + self.convertGender(faceName, 'travailleur')
+        #
+        # # Still late but hey, it's week-end!
+        # elif dayOfWeek > 3:
+        #     text = "Bonsoir " + faceName + " et bonne nuit, je suppose"
+        #
+        # # Back to basics
+        # else:
+        #     text = "Bonjour, " + faceName
+
+
+        text = self.getTextRecentOtherDetection(faceName, curTime)
+
+        if text is None:
+            text = self.getTextDefault(faceName)
+
+        textToSpeechPico(text)
 
 
     # Returns true if the predicted face is recognized
@@ -166,6 +260,7 @@ class App(object):
             img = cv2.resize(frame, (width, height), interpolation = cv2.INTER_CUBIC)
             imgout = img.copy()
 
+            # For each frame with a detected face
             for i,r in enumerate(self.detector.detect(img)):
 
                 # Get the face from image
@@ -233,6 +328,19 @@ if __name__ == '__main__':
     if not isinstance(model, ExtendedPredictableModel):
         print "[Error] The given model is not of type '%s'." % "ExtendedPredictableModel"
         sys.exit()
+
+    # Read the config files
+    with open("config/people.json") as f:
+        people = json.load(f)
+        people = people["people"]
+    f.closed
+    with open("config/sentences.json") as f:
+        sentences = json.load(f)
+        sentences = sentences["sentences"]
+    f.closed
+
+
+
 
     # Start the Application based on the given model
     print "Starting application..."
