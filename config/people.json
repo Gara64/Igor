@@ -1,10 +1,16 @@
 {
-    "people": {
-        "name": "Paul",
-        "gender": "male"
+    "people":[
+    {
+        "model_name": "Paul",
+        "speech_name": "pol",
+        "gender": "male",
+        "nicknames": ["pol", "panda", "maitre"]
     },
-    "people": {
-        "name": "Pauline",
-        "gender": "female"
+    {
+        "model_name": "Pauline",
+        "speech_name": "Pauline",
+        "gender": "female",
+        "nicknames": ["pauline", "hibou", "coquelicot", "maitresse", "grande déesse"]
     }
+]
 }

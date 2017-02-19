@@ -1,0 +1,5 @@
+CC = g++
+TARGET = picoPi2Std
+LIBS = -lexpat -lsvoxpico
+all:
+	$(CC) -D TTSLANG=$(LANGTTS) -L../lib/ strdup16to8.c strdup8to16.c svox_ssml_parser.cpp picottsengine.cpp main.picoPi2Std.cpp $(LIBS) -I../lib/ -fpermissive -o $(TARGET)

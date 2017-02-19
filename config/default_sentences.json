@@ -1,0 +1,32 @@
+{
+    "sentences": [
+        {
+            "speech": ["Hello"],
+            "when": {
+                "after": "any"
+            }
+        },
+        {
+            "speech": ["Why are you still here?"],
+            "when": {
+                "after": "self",
+                "delay": 0
+            }
+        },
+        {
+            "speech": ["Welcome back! I missed you"],
+            "when": {
+                "after": "self",
+                "delay": 144000
+            }
+
+        },
+        {
+            "speech": ["You as well", "You too"],
+            "when": {
+                "after": "other",
+                "delay": 10
+            }
+        }
+    ]
+}

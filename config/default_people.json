@@ -1,0 +1,9 @@
+{
+    "people": [{
+        "model_name": "",
+        "speech_name": "",
+        "gender": "<male|female>",
+        "nicknames": ["", ""]
+    }]
+
+}
