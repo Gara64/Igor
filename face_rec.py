@@ -29,9 +29,6 @@ from voice.text2speech import textToSpeechPico
 MAX_DISTANCE = 900          # Minimal euclidean distance to recognize someone
 DELAY_RECO_SAME_PERSON = 5  # Delay (seconds) between 2 same person recognition
 
-people = {}
-sentences = {}
-
 # Subclasses the PredictableModel to store some more information, so we don't
 # need to pass the dataset on each program call...
 class ExtendedPredictableModel(PredictableModel):
@@ -64,13 +61,13 @@ class App(object):
     # Dict to associate the models names with people info (e.g. nicknames, gender)
     peopleInfo = {}
 
-    def __init__(self, model, camera_id, cascade_filename):
+    def __init__(self, model, camera_id, cascade_filename, people, sentences):
         self.model = model
         self.detector = CascadedDetector(cascade_fn=cascade_filename, minNeighbors=5, scaleFactor=1.4)
         self.cam = create_capture(camera_id)
 
-        self.buildSentences()
-        self.buildPeople()
+        self.buildSentences(sentences)
+        self.buildPeople(people)
 
 
     # Get a face from the image
@@ -85,7 +82,7 @@ class App(object):
 
 
     # Build the sentences structures
-    def buildSentences(self):
+    def buildSentences(self, sentences):
         for sentence in sentences:
             if sentence["when"]["after"] == "other":
                 maxDelayOther = sentence["when"]["delay"]
@@ -101,10 +98,9 @@ class App(object):
 
 
     # Build the people names structure
-    def buildPeople(self):
+    def buildPeople(self, people):
         for p in people:
-            self.peopleNames[p["model_name"]] = (p["speech_name"], p["nicknames"], p["gender"])
-
+            self.peopleInfo[p["model_name"]] = (p["speech_name"], p["nicknames"], p["gender"])
 
 
     # Gender conversion for speech after face recognition
@@ -331,6 +327,9 @@ if __name__ == '__main__':
         print "[Error] The given model is not of type '%s'." % "ExtendedPredictableModel"
         sys.exit()
 
+    people = {}
+    sentences = {}
+
     # Read the config files
     with open("config/people.json") as f:
         people = json.load(f)
@@ -341,11 +340,11 @@ if __name__ == '__main__':
         sentences = sentences["sentences"]
     f.closed
 
-
-
-
     # Start the Application based on the given model
     print "Starting application..."
     App(model=model,
         camera_id=options.camera_id,
-        cascade_filename=options.cascade_filename).run()
+        cascade_filename=options.cascade_filename,
+        people=people,
+        sentences=sentences
+    ).run()
