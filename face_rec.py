@@ -133,17 +133,34 @@ class App(object):
         else:
             return people[0]
 
+    def getSpeechesIfRecentEnough(self, lastDetectDelay, delaysToSpeech):
+        # Check the max delays
+        for maxDelay, speeches in delaysToSpeech.iteritems():
+            if lastDetectDelay <= maxDelay:
+                return speeches
+        return None
 
     # Return text if someone else was recently detected
-    def getRecentOtherDetectionText(self, faceName, curTime):
+    def getRecentDetectionText(self, faceName, curTime):
         # Iterate over all the previous detection
         for name, delay in self.lastFaceDetect.iteritems():
+            lastDetectDelay = curTime - int(delay)
+
+            # Check a recent other detection
             if name is not faceName:
-                lastOtherDelay = curTime - int(delay)
-                # Check the max delays
-                for maxDelay, speeches in self.detectAfterOther.iteritems():
-                    if lastOtherDelay <= maxDelay:
-                        return self.pickSpeech(speeches, faceName) + " " + self.pickName(faceName)
+                speeches = self.getSpeechesIfRecentEnough(lastDetectDelay, self.detectAfterOther)
+                if speeches is None:
+                    return None
+                else:
+                    return self.pickSpeech(speeches, faceName) + " " + self.pickName(faceName)
+
+            # Check a recent self detection
+            else:
+                speeches = self.getSpeechesIfRecentEnough(lastDetectDelay, self.detectAfterSelf)
+                if speeches is None:
+                    return None
+                else:
+                    return self.pickSpeech(speeches, faceName) + " " + self.pickName(faceName)
 
 
     # Return text for recent self detection
@@ -207,7 +224,7 @@ class App(object):
         #     text = "Bonjour, " + faceName
 
 
-        text = self.getRecentOtherDetectionText(faceName, curTime)
+        text = self.getRecentDetectionText(faceName, curTime)
         #if text is None:
         #    text = self.getRecentSelfDetectionText(faceName, delay)
         if text is None:
