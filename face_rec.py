@@ -99,6 +99,7 @@ class App(object):
                 speeches = sentence["speech"]
                 self.detectAfterAny.append(speeches)
 
+
     # Build the people names structure
     def buildPeople(self):
         for p in people:
@@ -123,25 +124,35 @@ class App(object):
 
 
     # Util method to pick a speech or nickname name based on the model name
-    def pickName(self, faceName, useNickName):
+    def pickName(self, faceName):
         people = self.peopleNames[faceName]
-        if useNickName:
-            nickNames = people[1]
+        nickNames = people[1]
+        # TODO : test this condition
+        if nickNames is not None and len(nickNames) > 0:
             return nickNames[random.randint(0, len(nickNames) - 1)]
         else:
             return people[0]
 
 
     # Return text if someone else was recently detected
-    def getTextRecentOtherDetection(self, faceName, curTime):
+    def getRecentOtherDetectionText(self, faceName, curTime):
         # Iterate over all the previous detection
-        for delay, name in enumerate(self.lastFaceDetect):
-            if name != faceName:
+        for name, delay in self.lastFaceDetect.iteritems():
+            if name is not faceName:
                 lastOtherDelay = curTime - int(delay)
                 # Check the max delays
-                for maxDelay, speeches in enumerate(self.detectAfterOther):
-                    if lastOtherDelay < maxDelay:
-                        return self.pickSpeech(speeches) + self.pickName(faceName, False)
+                for maxDelay, speeches in self.detectAfterOther.iteritems():
+                    if lastOtherDelay <= maxDelay:
+                        return self.pickSpeech(speeches) + " " + self.pickName(faceName)
+
+
+    # Return text for recent self detection
+    def getRecentSelfDetectionText(self, faceName, delay):
+        delayLastFaceDetect = self.lastFaceDetect[faceName]
+        for maxDelay, speeches in self.detectAfterSelf.iteritems():
+            if delayLastFaceDetect <= maxDelay:
+                return self.pickSpeech(speeches) + " " + self.pickName(faceName)
+
 
 
     def getTextDelay(self, faceName, curTime):
@@ -153,42 +164,27 @@ class App(object):
         #     text = "Vous egalement, " + self.convertGender(faceName, 'maitre') + " " + faceName
 
 
-    def getTextDefault(self, faceName):
+    def getDefaultText(self, faceName):
         for speech in self.detectAfterAny:
-            return self.pickSpeech(speech) + self.pickName(faceName, True)
+            return self.pickSpeech(speech) + ", " + self.pickName(faceName)
 
 
     # Action after recognition
+    # Algo :
+    # * Detection d'une autre personne recemment
+    # * détection de la meme personne plusieurs fois de suite
+    # * detection après un long délai
+    # * détection en fct de l'heure / jour
+    # * détection par défaut
+    # TODO : the basic hello is boring. make an algo to make it smarter
+    # eg say hello once in the day
+    # say random sentence / surname, depending on the time, weather, ..
+    # Idea : voice mail -> drop messages to say when SO is back a home
     def actionAfterRecognition(self, faceName, curTime, delay):
-        # TODO : the basic hello is boring. make an algo to make it smarter
-        # eg say hello once in the day
-        # say random sentence / surname, depending on the time, weather, ..
-        # Idea : voice mail -> drop messages to say when SO is back a home
-
-
-        # Algo :
-        # * Detection d'une autre personne recemment
-        # * détection de la meme personne plusieurs fois de suite
-        # * detection après un long délai
-        # * détection en fct de l'heure / jour
-        # * détection par défaut
-
-
 
         delayHours = delay / 3600
         hourOfDay = time.localtime(curTime).tm_hour
         dayOfWeek =  time.localtime(curTime).tm_wday
-
-
-
-
-        # SO = "Paul" if faceName is "Pauline" else "Pauline"
-        # if SO in self.lastFaceDetect:
-        #     lastSODetection = curTime - self.lastFaceDetect[SO]
-        #     if lastSODetection < 10:
-        #         text = "Vous egalement, " + self.convertGender(faceName, 'maitre') + " " + faceName
-
-
 
         # # It's been a long time since the last detect
         # elif delayHours > 40:
@@ -211,11 +207,13 @@ class App(object):
         #     text = "Bonjour, " + faceName
 
 
-        text = self.getTextRecentOtherDetection(faceName, curTime)
-
+        text = self.getRecentOtherDetectionText(faceName, curTime)
+        #if text is None:
+        #    text = self.getRecentSelfDetectionText(faceName, delay)
         if text is None:
-            text = self.getTextDefault(faceName)
+            text = self.getDefaultText(faceName)
 
+        print text
         textToSpeechPico(text)
 
 
