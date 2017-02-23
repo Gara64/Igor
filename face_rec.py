@@ -55,14 +55,14 @@ def get_model(image_size, subject_names):
 
 class App(object):
 
-    # Dict to store faces detection timestamps
+    # Dict to associate the models names with detection timestamps
     lastFaceDetect = {}
-    # Dict to store the speeches
+    # Dicts to associate the models names with the texts for each context
     detectAfterOther = {}
     detectAfterSelf = {}
     detectAfterAny = []
-    # Dict to store the people names
-    peopleNames = {}
+    # Dict to associate the models names with people info (e.g. nicknames, gender)
+    peopleInfo = {}
 
     def __init__(self, model, camera_id, cascade_filename):
         self.model = model
@@ -106,26 +106,30 @@ class App(object):
             self.peopleNames[p["model_name"]] = (p["speech_name"], p["nicknames"], p["gender"])
 
 
-    # Gender convertion for speech after recognition
-    def convertGender(self, faceName, text):
-        gender = 0 if faceName is "Pauline" else 1
 
-        if text is "maitre":
-            if gender is 0: text = "maitresse"
-        elif text is "travailleur":
-            if gender is 0: text = "travailleuse"
-        print "gender : " + str(gender)
-        return text
+    # Gender conversion for speech after face recognition
+    def gendirify(self, text, faceName):
+        if "{" in text and "}" in text:
+            text = text.replace("{", "").replace("}","")
+            tokens = text.split(",")
+            gender = self.peopleInfo[faceName][2]
+            if gender is "female":
+                return tokens[1]
+            else:
+                return tokens[0]
+        else:
+            return text
 
 
     # Util method to pick a random text speech in the array
-    def pickSpeech(self, speech):
-        return speech[random.randint(0, len(speech) - 1)]
+    def pickSpeech(self, speeches, faceName):
+        speech = speeches[random.randint(0, len(speeches) - 1)]
+        return self.gendirify(speech, faceName)
 
 
     # Util method to pick a speech or nickname name based on the model name
     def pickName(self, faceName):
-        people = self.peopleNames[faceName]
+        people = self.peopleInfo[faceName]
         nickNames = people[1]
         # TODO : test this condition
         if nickNames is not None and len(nickNames) > 0:
@@ -143,7 +147,7 @@ class App(object):
                 # Check the max delays
                 for maxDelay, speeches in self.detectAfterOther.iteritems():
                     if lastOtherDelay <= maxDelay:
-                        return self.pickSpeech(speeches) + " " + self.pickName(faceName)
+                        return self.pickSpeech(speeches, faceName) + " " + self.pickName(faceName)
 
 
     # Return text for recent self detection
@@ -151,7 +155,7 @@ class App(object):
         delayLastFaceDetect = self.lastFaceDetect[faceName]
         for maxDelay, speeches in self.detectAfterSelf.iteritems():
             if delayLastFaceDetect <= maxDelay:
-                return self.pickSpeech(speeches) + " " + self.pickName(faceName)
+                return self.pickSpeech(speeches, faceName) + " " + self.pickName(faceName)
 
 
 
@@ -166,7 +170,7 @@ class App(object):
 
     def getDefaultText(self, faceName):
         for speech in self.detectAfterAny:
-            return self.pickSpeech(speech) + ", " + self.pickName(faceName)
+            return self.pickSpeech(speech, faceName) + ", " + self.pickName(faceName)
 
 
     # Action after recognition
