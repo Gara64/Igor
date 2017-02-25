@@ -54,12 +54,11 @@ class App(object):
 
     # Dict to associate the models names with detection timestamps
     lastFaceDetect = {}
-    # Dicts to associate the models names with the texts for each context
-    detectAfterOther = {}
-    detectAfterSelf = {}
-    detectAfterAny = []
     # Dict to associate the models names with people info (e.g. nicknames, gender)
     peopleInfo = {}
+    # Dict to associate action detection type with speeches info
+    speechesAfterDetect = {}
+
 
     def __init__(self, model, camera_id, cascade_filename, people, sentences):
         self.model = model
@@ -84,23 +83,42 @@ class App(object):
     # Build the sentences structures
     def buildSentences(self, sentences):
         for sentence in sentences:
-            if sentence["when"]["after"] == "other":
-                maxDelayOther = sentence["when"]["delay"]
-                speeches = sentence["speech"]
-                self.detectAfterOther[maxDelayOther] = speeches
-            elif sentence["when"]["after"] == "self":
-                maxDelaySelf = sentence["when"]["delay"]
-                speeches = sentence["speech"]
-                self.detectAfterSelf[maxDelaySelf] = speeches
-            elif sentence["when"]["after"] == "any":
-                speeches = sentence["speech"]
-                self.detectAfterAny.append(speeches)
+
+            # Action after detection speeches
+            if "after" in sentence["when"]:
+                # An "after type" can be self or other
+                afterType = sentence["when"]["after"]
+                if afterType == "any":
+                    self.speechesAfterDetect[afterType] = {}
+                    self.speechesAfterDetect[afterType]["speeches"] = sentence["speeches"]
+
+                else:
+                    if afterType not in self.speechesAfterDetect:
+                        self.speechesAfterDetect[afterType] = []
+
+                    afterInfo = {}
+                    # The actions can be triggered with a min or max delay
+                    if "min_delay" in sentence["when"]:
+                        minDelay = sentence["when"]["min_delay"]
+                        afterInfo["min_delay"] = minDelay
+                    if "max_delay" in sentence["when"]:
+                        maxDelay = sentence["when"]["max_delay"]
+                        afterInfo["max_delay"] = maxDelay
+
+                    afterInfo["speeches"] = sentence["speeches"]
+                    self.speechesAfterDetect[afterType].append(afterInfo)
+
+        print "speechesinfo : "
+        print self.speechesAfterDetect
 
 
     # Build the people names structure
     def buildPeople(self, people):
         for p in people:
-            self.peopleInfo[p["model_name"]] = (p["speech_name"], p["nicknames"], p["gender"])
+            self.peopleInfo[p["model_name"]] = (
+                p["speech_name"],
+                p["nicknames"],
+                p["gender"])
 
 
     # Gender conversion for speech after face recognition
@@ -109,7 +127,7 @@ class App(object):
             text = text.replace("{", "").replace("}","")
             tokens = text.split(",")
             gender = self.peopleInfo[faceName][2]
-            if gender is "female":
+            if gender == "female":
                 return tokens[1]
             else:
                 return tokens[0]
@@ -133,57 +151,47 @@ class App(object):
         else:
             return people[0]
 
-    def getSpeechesIfRecentEnough(self, lastDetectDelay, delaysToSpeech):
-        # Check the max delays
-        for maxDelay, speeches in delaysToSpeech.iteritems():
-            if lastDetectDelay <= maxDelay:
-                return speeches
-        return None
+
+    # Returns speeches that respect the last detect delay
+    def getSpeeches(self, lastDetectDelay, speechesInfo):
+        print "speeches info : "
+        print speechesInfo
+
+        for speechInfo in speechesInfo:
+            if "min_delay" in speechInfo:
+                if lastDetectDelay >= speechInfo["min_delay"]:
+                    return speechInfo["speeches"]
+            if "max_delay" in speechInfo:
+                if lastDetectDelay <= speechInfo["max_delay"]:
+                    return speechInfo["speeches"]
+            return None
+
 
     # Return text if someone else was recently detected
-    def getRecentDetectionText(self, faceName, curTime):
+    def getAfterDetectionText(self, faceName, curTime):
         # Iterate over all the previous detection
         for name, delay in self.lastFaceDetect.iteritems():
             lastDetectDelay = curTime - int(delay)
 
             # Check a recent other detection
-            if name is not faceName:
-                speeches = self.getSpeechesIfRecentEnough(lastDetectDelay, self.detectAfterOther)
-                if speeches is None:
-                    return None
-                else:
-                    return self.pickSpeech(speeches, faceName) + " " + self.pickName(faceName)
-
+            if name != faceName:
+                speechesInfo = self.speechesAfterDetect["other"]
             # Check a recent self detection
             else:
-                speeches = self.getSpeechesIfRecentEnough(lastDetectDelay, self.detectAfterSelf)
-                if speeches is None:
-                    return None
-                else:
-                    return self.pickSpeech(speeches, faceName) + " " + self.pickName(faceName)
+                speechesInfo = self.speechesAfterDetect["self"]
 
-
-    # Return text for recent self detection
-    def getRecentSelfDetectionText(self, faceName, delay):
-        delayLastFaceDetect = self.lastFaceDetect[faceName]
-        for maxDelay, speeches in self.detectAfterSelf.iteritems():
-            if delayLastFaceDetect <= maxDelay:
+            # Get speeches based on the last detect delay
+            speeches =  self.getSpeeches(lastDetectDelay, speechesInfo)
+            if speeches is not None:
                 return self.pickSpeech(speeches, faceName) + " " + self.pickName(faceName)
+            else:
+                return None
 
 
-
-    def getTextDelay(self, faceName, curTime):
-        return ""
-
-        # if SO in self.lastFaceDetect:
-        #     lastSODetection = curTime - self.lastFaceDetect[SO]
-        #     if lastSODetection < 10:
-        #     text = "Vous egalement, " + self.convertGender(faceName, 'maitre') + " " + faceName
-
-
+    # Get a default text
     def getDefaultText(self, faceName):
-        for speech in self.detectAfterAny:
-            return self.pickSpeech(speech, faceName) + ", " + self.pickName(faceName)
+        speeches = self.speechesAfterDetect["any"]["speeches"]
+        return self.pickSpeech(speeches, faceName) + ", " + self.pickName(faceName)
 
 
     # Action after recognition
@@ -224,13 +232,11 @@ class App(object):
         #     text = "Bonjour, " + faceName
 
 
-        text = self.getRecentDetectionText(faceName, curTime)
-        #if text is None:
-        #    text = self.getRecentSelfDetectionText(faceName, delay)
+        text = self.getAfterDetectionText(faceName, curTime)
         if text is None:
             text = self.getDefaultText(faceName)
 
-        print text
+        print "text to speech : " + text
         textToSpeechPico(text)
 
 
