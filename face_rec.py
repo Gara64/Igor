@@ -83,7 +83,6 @@ class App(object):
     # Build the sentences structures
     def buildSentences(self, sentences):
         for sentence in sentences:
-
             # Action after detection speeches
             if "after" in sentence["when"]:
                 # An "after type" can be self or other
@@ -154,31 +153,44 @@ class App(object):
 
     # Returns speeches that respect the last detect delay
     def getSpeeches(self, lastDetectDelay, speechesInfo):
-        print "speeches info : "
-        print speechesInfo
+        hasSpeech = False
+        hasMinDelay = False
+        hasMaxDelay = False
 
         for speechInfo in speechesInfo:
             if "min_delay" in speechInfo:
+                hasMinDelay = True
                 if lastDetectDelay >= speechInfo["min_delay"]:
-                    return speechInfo["speeches"]
+                    hasSpeech = True
             if "max_delay" in speechInfo:
+                hasMaxDelay = True
                 if lastDetectDelay <= speechInfo["max_delay"]:
-                    return speechInfo["speeches"]
-            return None
+                    if hasMinDelay and not hasSpeech:
+                        hasSpeech = False
+                    else:
+                        hasSpeech = True
+                else:
+                    hasSpeech = False
+            if hasSpeech:
+                return speechInfo["speeches"]
+            else:
+                return None
 
 
     # Return text if someone else was recently detected
-    def getAfterDetectionText(self, faceName, curTime):
+    def getAfterDetectionText(self, faceName, curTime, lastDetectDelay):
         # Iterate over all the previous detection
         for name, delay in self.lastFaceDetect.iteritems():
-            lastDetectDelay = curTime - int(delay)
 
             # Check a recent other detection
             if name != faceName:
+                lastDetectdelay = curTime - int(delay)
                 speechesInfo = self.speechesAfterDetect["other"]
             # Check a recent self detection
             else:
                 speechesInfo = self.speechesAfterDetect["self"]
+
+            print "last detect : " + str(lastDetectDelay)
 
             # Get speeches based on the last detect delay
             speeches =  self.getSpeeches(lastDetectDelay, speechesInfo)
@@ -232,7 +244,7 @@ class App(object):
         #     text = "Bonjour, " + faceName
 
 
-        text = self.getAfterDetectionText(faceName, curTime)
+        text = self.getAfterDetectionText(faceName, curTime, delay)
         if text is None:
             text = self.getDefaultText(faceName)
 
