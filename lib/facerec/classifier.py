@@ -100,7 +100,6 @@ class NearestNeighbor(AbstractClassifier):
         # distance of the k first items. So imagine you have a 1-NN and you
         # want to perform a threshold against it, you should take the first
         # item
-        print "distance : " + str(sorted_distances[0])
         return [predicted_label, { 'labels' : sorted_y, 'distances' : sorted_distances }]
 
     def __repr__(self):
