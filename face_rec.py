@@ -28,6 +28,7 @@ from voice.text2speech import textToSpeechPico
 
 MAX_DISTANCE = 900          # Minimal euclidean distance to recognize someone
 DELAY_RECO_SAME_PERSON = 5  # Delay (seconds) between 2 same person recognition
+SAVE_PIC = False            # Boolean to save or not the image at the recognition
 
 # Subclasses the PredictableModel to store some more information, so we don't
 # need to pass the dataset on each program call...
@@ -59,14 +60,19 @@ class App(object):
     # Dict to associate action detection type with speeches info
     speechesAfterDetect = {}
 
+    photoPath = ""
 
-    def __init__(self, model, camera_id, cascade_filename, people, sentences):
+
+    def __init__(self, model, camera_id, cascade_filename, people, sentences, photoPath):
         self.model = model
         self.detector = CascadedDetector(cascade_fn=cascade_filename, minNeighbors=5, scaleFactor=1.4)
         self.cam = create_capture(camera_id)
 
         self.buildSentences(sentences)
         self.buildPeople(people)
+
+        self.photoPath = photoPath
+        # TODO : implements photo save at detection
 
 
     # Get a face from the image
@@ -85,12 +91,15 @@ class App(object):
         for sentence in sentences:
             # Action after detection speeches
             if "after" in sentence["when"]:
-                # An "after type" can be self or other
+                # An "after type" can be self, other, or any
                 afterType = sentence["when"]["after"]
+
+                # The any type just indicates the default speeches
                 if afterType == "any":
                     self.speechesAfterDetect[afterType] = {}
                     self.speechesAfterDetect[afterType]["speeches"] = sentence["speeches"]
 
+                # All the others type contains info stored for detection
                 else:
                     if afterType not in self.speechesAfterDetect:
                         self.speechesAfterDetect[afterType] = []
@@ -106,9 +115,6 @@ class App(object):
 
                     afterInfo["speeches"] = sentence["speeches"]
                     self.speechesAfterDetect[afterType].append(afterInfo)
-
-        print "speechesinfo : "
-        print self.speechesAfterDetect
 
 
     # Build the people names structure
@@ -157,6 +163,7 @@ class App(object):
         hasMinDelay = False
         hasMaxDelay = False
 
+        # Lookup all the speeches info and check the min/max delay
         for speechInfo in speechesInfo:
             if "min_delay" in speechInfo:
                 hasMinDelay = True
@@ -165,12 +172,15 @@ class App(object):
             if "max_delay" in speechInfo:
                 hasMaxDelay = True
                 if lastDetectDelay <= speechInfo["max_delay"]:
+                    # Additional check in case of both min and max delays
                     if hasMinDelay and not hasSpeech:
                         hasSpeech = False
                     else:
                         hasSpeech = True
                 else:
                     hasSpeech = False
+
+            # Returns the speeches if all the delays conditions are met
             if hasSpeech:
                 return speechInfo["speeches"]
             else:
@@ -281,6 +291,7 @@ class App(object):
         else:
             return [None, None, None]
 
+
     # Run the face detection
     def run(self):
         cpt = 0
@@ -309,6 +320,11 @@ class App(object):
                 if faceName:
                     self.actionAfterRecognition(faceName, curTime, delay)
 
+                if SAVE_PIC:
+                    cv2.imwrite(self.photoPath + "/img-" + str(i) + ".jpg", img)
+                    cv2.imwrite(self.photoPath + "/face-" + str(i) + ".jpg", face)
+                    print "Image saved"
+
 
 if __name__ == '__main__':
     from optparse import OptionParser
@@ -328,6 +344,8 @@ if __name__ == '__main__':
     parser.add_option("-c", "--cascade", action="store", dest="cascade_filename", default="haarcascade_frontalface_alt2.xml",
         help="Sets the path to the Haar Cascade used for the face detection part (default: haarcascade_frontalface_alt2.xml).")
 
+    parser.add_option("-p", "--photo", action="store", dest="photo_path",
+        help="Store the picture taken for each detection.")
 
     # Parse arguments:
     (options, args) = parser.parse_args()
@@ -375,11 +393,17 @@ if __name__ == '__main__':
         sentences = sentences["sentences"]
     f.closed
 
+    # Actve the photo shooting
+    if options.photo_path:
+        print "path : " + options.photo_path
+        SAVE_PIC = True
+
     # Start the Application based on the given model
     print "Starting application..."
     App(model=model,
         camera_id=options.camera_id,
         cascade_filename=options.cascade_filename,
         people=people,
-        sentences=sentences
+        sentences=sentences,
+        photoPath=options.photo_path
     ).run()
